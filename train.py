@@ -81,6 +81,7 @@ with zipfile.ZipFile(DATA, "r") as archive:
             "label": int(cohort == "PD"),
         }
 
+        # process each action unit column
         for column in au_columns:
             values = pd.to_numeric(
                 df[column], errors="coerce"
@@ -100,3 +101,68 @@ with zipfile.ZipFile(DATA, "r") as archive:
 
     if not records:
         raise RuntimeError("No usable recordings found.")
+
+    # start training
+    table = pd.DataFrame(records)
+
+    table = table.groupby(
+        ["subject", "label"], as_index=False
+    ).mean(numeric_only=True)
+
+    print("[TRAIN] Participants:", len(table))
+    print("[TRAIN] Class distribution:")
+    print(table["label"].value_counts())
+
+    x = table.drop(columns=["subject", "label"])
+    y = table["label"]
+
+    # entire participants are kept out of training
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=0.25, random_state=42, stratify=y
+    )
+
+    # keep features sufficiently represented in training
+    columns = x_train.columns[
+        x_train.notna().mean() >= 0.6
+    ]
+
+    x_train = x_train[columns]
+    x_test = x_test[columns]
+
+    # initialize model
+    model = make_pipeline(
+        SimpleImputer(strategy="median"),
+        RandomForestClassifier(
+            n_estimators=300,
+            min_samples_leaf=4,
+            class_weight="balanced",
+            random_state=42,
+        )
+    )
+
+    model.fit(x_train, y_train)
+
+    # evaluate model on test set
+    predictions = model.predict(x_test)
+    probabilities = model.predict_proba(x_test)[:, 1]
+
+    # output results
+    print("[TRAIN] Classification results:")
+    print(classification_report(
+            y_test, predictions,
+            target_names=["Healthy control", "Parkinson's"],
+            zero_division=0,
+    ))
+
+    print("[TRAIN] Balanced accuracy:", balanced_accuracy_score(y_test, predictions))
+    print("[TRAIN] ROC AUC:", roc_auc_score(y_test, probabilities))
+    print("[TRAIN] Confusion matrix:")
+    print(confusion_matrix(y_test, predictions))
+
+    # dump training to file
+    joblib.dump(
+        {"model": model, "features": list(columns)},
+        "model/hypomimia_baseline.joblib",
+    )
+
+    print("[TRAIN] Model saved.")
