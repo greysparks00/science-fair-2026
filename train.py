@@ -5,6 +5,7 @@
 
 import re
 import zipfile
+import json
 from pathlib import Path
 
 import joblib
@@ -19,9 +20,10 @@ from sklearn.metrics import (
     confusion_matrix,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split, cross_validate
 from sklearn.pipeline import make_pipeline
 
+# local path of our dataset
 DATA = Path("datasets/Selfi-image-Action Units.zip")
 records = []
 
@@ -142,6 +144,34 @@ with zipfile.ZipFile(DATA, "r") as archive:
 
     model.fit(x_train, y_train)
 
+    print("[TRAIN] Running cross validation...")
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+    )
+
+    results = cross_validate(
+        model,
+        x_train,
+        y_train,
+        cv=cv,
+        scoring={
+            "accuracy": "accuracy",
+            "balanced_accuracy": "balanced_accuracy",
+            "roc_auc": "roc_auc",
+        },
+    )
+
+    for metric, scores in results.items():
+        if metric.startswith("test_"):
+            print(
+                f"{metric}: "
+                f"{scores.mean():.3f} "
+                f"+/- {scores.std():.3f}"
+            )
+
     # evaluate model on test set
     predictions = model.predict(x_test)
     probabilities = model.predict_proba(x_test)[:, 1]
@@ -159,7 +189,33 @@ with zipfile.ZipFile(DATA, "r") as archive:
     print("[TRAIN] Confusion matrix:")
     print(confusion_matrix(y_test, predictions))
 
-    # dump training to file
+    # dump model results to json file to display and compare to on the dashboard
+    report = {
+        "model": "Random Forest v1",
+        "dataset": "UT-MoDaPark",
+        "participants": int(len(table)),
+        "cv_accuracy": float(results["test_accuracy"].mean()),
+        "cv_balanced_accuracy": float(
+            results["test_balanced_accuracy"].mean()
+        ),
+        "cv_roc_auc": float(results["test_roc_auc"].mean()),
+        "test_balanced_accuracy": float(
+            balanced_accuracy_score(y_test, predictions)
+        ),
+        "test_roc_auc": float(
+            roc_auc_score(y_test, probabilities)
+        ),
+        "confusion_matrix": confusion_matrix(
+            y_test, predictions
+        ).tolist(),
+    }
+
+    Path("runs").mkdir(exist_ok=True)
+    Path("runs/rf_baseline_v1.json").write_text(
+        json.dumps(report, indent=2)
+    )
+
+    # dump model training to file
     joblib.dump(
         {"model": model, "features": list(columns)},
         "model/hypomimia_baseline.joblib",
