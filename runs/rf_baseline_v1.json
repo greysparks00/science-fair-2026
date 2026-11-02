@@ -1,0 +1,20 @@
+{
+  "model": "Random Forest v1",
+  "dataset": "UT-MoDaPark",
+  "participants": 126,
+  "cv_accuracy": 0.7438596491228069,
+  "cv_balanced_accuracy": 0.7586363636363637,
+  "cv_roc_auc": 0.8438636363636363,
+  "test_balanced_accuracy": 0.7976190476190477,
+  "test_roc_auc": 0.9246031746031746,
+  "confusion_matrix": [
+    [
+      12,
+      6
+    ],
+    [
+      1,
+      13
+    ]
+  ]
+}
